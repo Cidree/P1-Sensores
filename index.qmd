@@ -1,0 +1,959 @@
+---
+title: "Analysis of summer 2022 wildfires blast in Folgoso do Courel, Spain"
+date: '2023-02-20'
+author: 'Adrián Cidre González'
+editor: visual
+
+abstract: "Galicia is the northestern region of Spain. Its climate has critical features that make it a particular scenario for wildfires. The very humid conditions of the region combined with the rural Exodus created a continuous forest structure dominated by very flammable species such as *Erica* spp., *Cytisus scoparius*, etc. Conversely to what is expected from a humid region, Galicia gathers almost half of the wildfires (in area and number) of Spain. This is explained by the fact that summer is Mediterranean-influenced, and severe droughts can be expected in Galicia, specially in the province of Ourense.  
+
+The wildfires of summer 2022 will be in the memory of the Galician population, when more than 40,000 ha burned during more than 1 month during July and August. A total of 63 of large forest fires (i.e. greater than 500 ha) were registed in Galicia until the $31^{st}$ of August. Furthermore, the two greatest wildfires of the history of Galicia since we have registers were recorded. One comprises the municipality of Folgoso do Courel, where about 6,400 hectares burned of which the 89% presented moderate to high levels of severity. The spatio-temporal dynamics showed that the northern area (higher in altitude) was typically healthier and humid, resulting in absence of fires, whereas the southern area with unhealthier and less humid vegetation was devastated."
+
+# Format options
+page-layout: full
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc-title: 'Contents'
+    css: './styles/style.css'
+    theme: lux
+    highlight-style: zenburn
+  
+# Code
+code-copy: hover
+execute: 
+  warning: false
+
+# References
+bibliography: './styles/biblio.bib'
+crossref: 
+  fig-title: Fig.
+
+# Figures and tables
+fig-align: 'center'
+fig-cap-location: bottom
+tbl-cap-location: top
+---
+
+## Introduction {#sec-intro}
+
+During the summer of 2022, the region of Galicia was devastated by wildfires, with over 40,000 hectares burned in just July and August. The fire outbreak began with an intense dry storm on the evening of July $15^{th}$, which brought with it over 6,000 lightning strikes in less than 4 hours. The same week, temperatures in Ourense reached a record high of 44ºC, with similar heat waves reported throughout the province. These extreme weather conditions created the perfect storm for the spread of devastating wildfires.
+
+The year 2022 was marked by a severe drought, which affected not only the summer months but also late winter and spring, a crucial time for replenishing the trees' water supply. This shortage of water caused significant stress to the vegetation, which was further exacerbated by the ongoing rural abandonment. With no human intervention, dead biomass accumulated in large quantities, creating dangerous conditions for wildfires. The unusual weather conditions combined with the high amount of fuel available led to an unprecedented number of wildfires, which overwhelmed the firefighting resources and were difficult to contain. The existing firefighting infrastructure was not equipped to handle such a catastrophic situation.
+
+In this study, I studied how the vegetation stress evolved over time. To relate it, a comparison was made of a relatively normal (average precipitation) year as it was 2021 with 954 registered wildfires and only 4,400 ha burned, against a dry year as 2022 with more than 40,000 ha burned in only 2 months (July and August).    
+
+The aim of this work was to study the spatio-temporal dynamics using vegetation indices derived from remote sensing images. The specific objectives were: (1) to study spatio-temporal dynamics of vegetation statues using the well-known Enhanced Vegetation Index (EVI); (2) to study the spatio-temporal dynamics of vegetation moisture through the Normalized Difference Water Index (NDWI); (3) to define the burned area and its severity.  
+
+<br>
+
+## Materials and Methods {#sec-matmet}  
+
+### Packages  
+
+```{r packages}
+require(pacman)
+
+p_load(sf, here, terra, geodata, tidyverse, ggspatial, mapview, elevatr,
+       rasterVis, tidyterra, cptcity, RColorBrewer, spatialEco, report,
+       lubridate, RStoolbox, flextable, leafpop)
+```
+
+<br>
+
+### Study area {#sec-aoi}  
+
+The selected study area is the subregion of Folgoso de Courel (Galicia) which was severely affected by wildfires.
+
+
+```{r}
+#| warning: false
+#| message: false
+# Download spanish level 4 boundaries
+spain <- gadm(country = 'ESP',
+              level = 4,
+              path = here('inputs/'),
+              resolution = 2)
+
+# Filter study area
+aoi <- spain |> 
+  st_as_sf() |> 
+  filter(NAME_4 == 'Folgoso do Courel')
+```
+
+```{r}
+#| eval: false
+# Save the study area in the inputs folder
+st_write(aoi,
+         dsn = here('inputs/courel.shp'),
+         delete_dsn = TRUE)
+```
+
+In [Fig. @fig-aoi] we can see the location of the study area. Setting on the *Esri.WorldImagery* map, we can see that the region is very montanious, and mostly covered by forests.  
+
+```{r}
+#| fig-cap: Location of the study area (Folgoso do Courel, Galicia)
+#| label: fig-aoi
+#| code-fold: true
+mapview(aoi,
+        viewer.suppress = mapviewGetOption("viewer.suppress"),
+        color = 'red',
+        lwd = 3,
+        alpha.regions = 0,
+        label = 'Folgoso do Courel',
+        legend = FALSE
+        )
+```
+<br>  
+
+We can illustrate this by plotting the slope of the study area. To do so, we can download the DEM with the next chnuk of code, and compute the slope with the `terra::terrain()` function.  
+
+```{r}
+#| warning: false
+#| message: false
+# Download the DEM
+dem <- get_elev_raster(locations = aoi,
+                       z = 14,
+                       clip = "bbox") |>
+    rast()
+
+# Compute the slope
+slope <- terrain(dem, v = 'slope')
+```
+
+Next, a graphical representation of the DEM and the slope is presented in [Fig. @fig-dem] and [Fig. @fig-slope], respectively.  
+
+```{r}
+#| eval: false
+#| code-fold: true
+pal <- brewer.pal(n = 10, name = 'RdYlBu')
+plot(dem, col = pal, main = 'DEM')
+plot(slope, col = pal, main = 'Slope')
+```
+
+::: {.panel-tabset}
+
+## DEM  
+
+```{r dem}
+#| echo: false
+#| fig-cap: Representation of the DEM in the bounding box the study area (Folgoso do Courel, Galicia, Spain)
+#| label: fig-dem
+pal <- brewer.pal(n = 10, name = 'RdYlBu')
+plot(dem, col = pal, main = 'DEM')
+plot(aoi$geometry, lwd = 2, add = T)
+```
+
+## Slope  
+
+```{r slope}
+#| echo: false
+#| fig-cap: Representation of the slope in the bounding box the study area (Folgoso do Courel, Galicia, Spain).
+#| label: fig-slope
+plot(slope, col = pal, main = 'Slope')
+plot(aoi$geometry, lwd = 2, add = T)
+```
+
+:::
+
+<br>
+
+### Remote sensing images  
+
+In this study, high spatial resolution images from Sentinel-2 (10m) were downloaded using *Google Earth Engine* (GEE; @GEE). First, the R package sen2r [@sen2r] was used to download the images in a loop. However, some images of 2022 gave some error. Therefore, GEE was used since it is a novel and efficient platform to obtain remote sensing images.  
+
+<div class='cuadros'>
+<center>**Code used with sen2r**</center>  
+
+The next lines were executed in R. This resulted in successfully download of all the images of 2021, but for some reason, from February 2022 some error was arising.  
+
+```{r}
+#| code-fold: true
+#| eval: false
+## Parameters for loop
+startDates <- date_seq(start = '2021-01-01',
+                       end = '2022-12-01',
+                       step = 'month')
+
+endDates <- date_seq(start = '2021-01-30',
+                       end = '2022-12-30',
+                       step = 'month')
+
+endDates <- endDates + rep(c(1,-2,1,0,1,0,1,1,0,1,0,1),2)
+
+nameImage <- c(paste0(month.name, 21),
+               paste0(month.name, 22))
+
+## Function to map over the parameters
+
+downloadSen2 <- function(start, end, name){
+      x <- sen2r(
+      gui = F,
+      preprocess = TRUE,
+      s2_levels = 'l2a',
+      rm_safe = "all",
+      max_cloud_safe = 30,
+      timewindow = c(start, end),
+      extent = aoi,
+      extent_name = name,
+      list_prods = 'BOA',
+      list_indices = c('evi','EVI','NDWI'),
+      mask_type = 'cloud_medium_proba',
+      max_mask = 10,
+      clip_on_extent = TRUE,
+      extent_as_mask = TRUE,
+      res_s2 = '20m',
+      proj = 4326,
+      overwrite = TRUE,
+      path_l2a = safe,
+      path_out = outputs,
+      path_subdirs = TRUE
+    )
+      return(x)
+}
+
+
+## The next function maps over the parameters in the funcion
+
+sen2list <- pmap(list(startDates[1:12],
+                      endDates[1:12],
+                      nameImage[1:12]),
+                  downloadSen2)
+```
+
+Apparently, the code works very well, but there is some reason that makes the loop fails after January 2022.
+</div>  
+
+The code for downloading the images from GEE can be found [here](https://code.earthengine.google.com/6c93aef568e42803992e07751d87b798). Keep in mind that if you attempt to download the same images, they may not be accessible, in which case you will need to import the area of interest in GEE (as described in the first chunk of code in the @sec-aoi).
+
+The dataset used in this study is the Harmonized Sentinel-2 MultiSpectral Instrument Level-2A. All images from the period of January $1^{st}$, 2021 to December $31^{st}$, 2022 were analyzed, and only those with less than 25% cloud coverage were selected (to assure the months before the wildfire are included). This resulted in a total of 42 images. By utilizing the GEE platform, images from the same month and year were sorted by cloudy pixel coverage,and only the one with less cloudy coverage per month and year was kept. However, due to limited cloud coverage, only 21 of the 24 months had suitable images. The images were exported in the ETRS89 UTM zone 29N (EPSG: 25829) Coordinate Reference System (CRS). The images are stored in the *inputs/sentinel-final* directory and their names will be examined to determine which months are missing.  
+
+```{r}
+# Create object with names (useful for later)
+nameImage <- c(paste0(month.name,'_2021'),
+               paste0(month.name, '_2022'))
+
+# Obtain file names
+f <- list.files(path = here('inputs/sentinel-final/')) |> 
+  str_remove('.tif') 
+
+# Print sorted names
+print(nameImage[which(nameImage %in% f)])
+```
+
+We can see the missing dates include January 2021, October 2021, March 2022 and December 2022. To accurately capture changes in vegetation indices (@sec-indices) across different years, this study focuses on eight selected months. The months of January, March, and December are therefore eliminated from this analysis, as they do not create significant gaps in the time series. While it could be allowed for greater cloud coverage, it was considered that restricting the analysis for the chosen months will produce higher-quality results.  
+
+```{r}
+#| warning: false
+#| message: false
+# List sentinel files
+sentinelFiles <- list.files(path = here('inputs/sentinel-final//'),
+                            full.names = TRUE)
+
+# Apply function to order the files chronologically
+dates <- sapply(sentinelFiles, function(x) {
+   date <- unlist(strsplit(x, "/"))[11]
+   date <- date |> 
+     str_remove('.tif') |> 
+     str_split("_")
+   my(paste0(pluck(date,1)[1],'-',pluck(date,1)[2]))
+})
+
+# Sort the vector
+sentinelSorted <- sentinelFiles[order(dates)]
+
+# Eliminate the files of January, March, October and December
+sentinelSorted <- sentinelSorted[-c(2, 10, 11, 19)]
+
+# Eliminate them also in the nameImage object created in chunk above
+nameImage <- nameImage[-c(1, 3, 10, 12, 13, 15, 22, 24)]
+```
+
+These steps are quite complex but necessary to keep our layers in order, so we avoid to order them each time we want to work with them. In the next step, the layers are read in two different objects (1 per year) for convenience. Note that the original images of Sentinel-2 in GEE are scaled by 0.0001 and they were not scaled within the platform. Another correction is to set the domain [0, 1] so the higher values derived from sensor saturation with clouds, snow or other pixels will become 1. To do so, the function `scaleSen2(x)` was created and mapped over the lists. To make it easier to operate with layers and bands, only a subset of bands that will be used in @sec-indices were filtered:  
+
+* **B2**: blue  
+
+* **B3**: green  
+
+* **B4**: red  
+
+* **B8**: near infrared (NIR)  
+
+* **B11**: short-wave infrared (SWIR)  
+
+* **B12**: short-wave infrared 2 (SWIR2)  
+
+```{r}
+# Read images
+sen2021 <- map(sentinelSorted[1:8], rast)
+sen2022 <- map(sentinelSorted[9:16], rast)
+
+# Give names to images
+names(sen2021) <- nameImage[1:8]
+names(sen2022) <- nameImage[9:16]
+
+# Create Sentinel-2 correction function
+scaleSen2 <- function(x){
+  sub <- subset(x, c('B2','B3','B4','B8','B11','B12'))
+  div <- sub*0.0001
+  dc <- clamp(div, 0, 1)
+  return(dc)
+}
+
+# Map the Sentinel-2 correction
+sen2021 <- map(sen2021, scaleSen2)
+sen2022 <- map(sen2022, scaleSen2)
+```
+
+The objects **sen2021** and **sen2022** contain each one 8 *SpatRasters* with the abovementioned bands. These *SpatRasters* will be the inputs for the subsequent sections.  
+
+<br>
+
+### Remote sensing indices {#sec-indices}  
+
+In order to assess the spatio-temporal dynamics of the vegetation, two indices were selected. The first one is the well-known Enhanced Vegetation Index (EVI). It is an index similar to NDVI, but with an enhanced performance against biomass saturation, soil background and atmosphere influences [@evi]. The typical values for healthy vegetation are generally around 0.2 to 0.8. The formula is in @eq-evi, where the empiric parameters are $G = 2.5, \ L = 1, \  C_1 = 6$, and $C_2 = 7.5$.
+
+$$
+EVI = G(\frac{\rho_{NIR}-\rho_{red}}{L + \rho_{NIR}+ C_1 \rho_{red} - C_2 \rho_{blue}})
+$$ {#eq-evi}
+
+The purpose of computing this index is to indicate the condition of the vegetation over the course of a year (2021) when wildfires were entirely absent in Folgoso do Courel, and significantly below average at the regional level in Galicia, against a year (2022) with a blast of wildfires beyond firefighting capacity. The R package RStoolbox [@rstoolbox] was used to compute the EVI. In the next chunk of code a function is created to compute the EVI and convert it to a *SpatRaster* object.  
+
+```{r}
+# Create function for evi
+evi <- function(img){
+  # Calc evi
+  evi <- spectralIndices(img,
+                          red = 'B4',
+                          nir = 'B8',
+                          blue = 'B2',
+                          indices = 'EVI',
+                          coefs = list(G = 2.5,
+                                       C1 = 6,
+                                       C2 = 7.5,
+                                       L_evi = 1))
+  # Turn into terra raster
+  evi <- rast(evi)
+
+  return(evi)
+}
+
+# Map the function over the time series, and brick them
+evi2021 <- map(sen2021, evi) |> 
+  rast()
+evi2022 <- map(sen2022, evi) |> 
+  rast()
+```
+
+In order to compare the distribution of the EVI, the values were extracted and converted to a data frame for easier plotting.  
+
+```{r}
+dataevi <- values(evi2021) |> 
+  bind_cols(values(evi2022)) |> 
+  drop_na() |> 
+  pivot_longer(cols = February_2021:November_2022,
+               names_to = 'Period') |> 
+  separate_wider_delim(Period, delim = '_', names = c('Month','Year')) |> 
+  mutate(Month = factor(Month, levels = c('February','April','May',
+                                          'June','July','August',
+                                          'September','November')),
+         Year = factor(Year))
+```
+
+Graphical representations are helpful to assess the results, but in order to have a fair judgment of the results a statistical test is necessary. The months of May and June were compared among years. The normality was assessed through the Kolmogorov-Smirnov test (see next chunks), and since the data was not normal, the non-parametric Wilcoxon Signed Rank test was used.   
+
+```{r}
+#| code-fold: true
+june2021 <- filter(dataevi, Month == 'June' & Year == '2021')$value
+ks.test(june2021, "pnorm", mean(june2021), sd(june2021))
+```
+
+
+```{r}
+#| code-fold: true
+june2022 <- filter(dataevi, Month == 'June' & Year == '2022')$value
+ks.test(june2022, "pnorm", mean(june2022), sd(june2022))
+```
+
+
+```{r}
+#| code-fold: true
+may2021 <- filter(dataevi, Month == 'May' & Year == '2021')$value
+ks.test(may2021, "pnorm", mean(may2021), sd(may2021))
+```
+
+
+```{r}
+#| code-fold: true
+may2022 <- filter(dataevi, Month == 'May' & Year == '2022')$value
+ks.test(may2022, "pnorm", mean(may2022), sd(may2022))
+```
+<br>
+
+As a complementary understanding of the vegetation dynamics in the months pre-fire, the Normalized Difference Water Index (NDWI) was calculated. The NDWI ([@eq-ndwi]) is an index that detects moisture levels in vegetation through the combination of NIR and SWIR bands [@ndwi]. This index is sensitive to changes in moisture allocated in vegetation canopies, and therefore, a more accurate index to study the drought dymanics.  
+
+$$
+NDWI = \frac{\rho_{NIR} - \rho_{SWIR}}{\rho_{NIR} + \rho_{SWIR}}
+$$ {#eq-ndwi}
+
+Similarly to the EVI, a function was created to compute the NDWI:  
+
+```{r}
+# Create ndwi function
+ndwi <- function(img){
+  ndwi <- spectralIndices(img,
+                           nir = 'B8',
+                           swir2 = 'B11',
+                           indices = 'NDWI2')
+  ndwi <- rast(ndwi)
+  return(ndwi)
+}
+
+# Map the function over the time series, and brick them
+ndwi2021 <- map(sen2021, ndwi) |>
+  rast()
+ndwi2022 <- map(sen2022, ndwi) |>
+  rast()
+```
+
+As for EVI, a data frame was created for easier analysis.  
+
+```{r}
+datandwi <- values(ndwi2021) |> 
+  bind_cols(values(ndwi2022)) |> 
+  drop_na() |> 
+  pivot_longer(cols = February_2021:November_2022,
+               names_to = 'Period') |> 
+  separate_wider_delim(Period, delim = '_', names = c('Month','Year')) |> 
+  mutate(Month = factor(Month, levels = c('February','April','May',
+                                          'June','July','August',
+                                          'September','November')),
+         Year = factor(Year))
+```
+
+The values of NDWI depends on type and cover of vegetation, and leaf content of water. The higher the value, the more the canopy cover and water content.  
+
+<br>
+
+
+### Extent of the wildfires  
+
+To earn a deeper knowledge of the damage of the wildfires of 2022 in Folgoso do Courel, the Difference Normalized Burn Ratio Index (dNBRI) was calculated. The dNBRI is the difference of the Normalized Burn Ratio Index (NBRI) before and after the wildfire ([@eq-ndbri] and [@eq-dndbri]).  
+
+
+$$
+NBRI = \frac{\rho_{NIR} - \rho_{SWIR}}{\rho_{NIR} + \rho_{SWIR}}
+$$ {#eq-ndbri}
+$$
+dNBRI = NBRI_{pre} - NBRI_{pos}
+$$ {#eq-dndbri}
+
+The burned vegetation reflects high portion the short-wave infrared (SWIR), and small portion of NIR. Therefore, burned areas will have small value of NBRI whereas non-burned areas will have high values. Note that the index can give wrong estimations when snow is present. Because of this, the best option is to take an immediately image before the fire and an immediately image after the fire to have the most accurate results.  
+
+To calculate the index, the R package RStoolbox was used [@rstoolbox]. The methodology of @firemon was followed, scaling the results by $10^3$ and using the classification of @tbl-firemon. The fires extended since the $15^{th}$ of July until the beginning of August. Therefore, the selected images were June 2022 and August 2022.
+
+```{r}
+#| echo: false
+#| label: tbl-firemon
+#| tbl-cap: Firemon classification for the difference Normalized Burn Ratio Index.
+
+tabFir <- data.frame(
+  Severity = c('Enhanced Regrowth, High',
+               'Enhanced Regrowth, Low',
+               'Unburned',
+               'Low Severity',
+               'Moderate-low Severity',
+               'Moderate-high Severity',
+               'High Severity'),
+  `dNBRI value` = c('-500 to -251','-251 to -101','-101 to 99','99 to 269','269 to 440', '440 to 660','660 to 1300'))
+
+flextable(tabFir,
+          cwidth = 2) |> 
+  align(j = 2,
+        align = 'center',
+        part = 'all')
+```
+
+```{r}
+# Calculate indices
+nbri_pre <- spectralIndices(sen2022$June_2022,
+                            nir = 'B8',
+                            swir3 = 'B12',
+                            indices = 'NBRI')
+
+nbri_pos <- spectralIndices(sen2022$August_2022,
+                            nir = 'B8',
+                            swir3 = 'B12',
+                            indices = 'NBRI')
+
+# Calculate dNBRI and apply Firemon correction
+dnbri <- rast((nbri_pre - nbri_pos)*1000)
+```
+
+The next crucial step is to reclassify the pixels based on @firemon classification. Note that in @tbl-firemon it was already showed that the domain of this classification is between -500 and 1300. Therefore, lower and higher values must be classified as *NA*.  
+
+```{r}
+# Create classification matrix
+nbri_matrix <- matrix(c(-Inf, -500, -1,
+                        -500, -251, 1,
+                        -251, -101, 2,
+                        -101, 99, 3,
+                        99, 269, 4,
+                        269, 439, 5,
+                        439, 659, 6,
+                        659, 1300, 7,
+                        1300, Inf, -1),
+                      ncol = 3,
+                      byrow = T)
+
+# Reclassify values
+dnbri_clas <- classify(dnbri,
+                       rcl = nbri_matrix)
+dnbri_clas[dnbri_clas == -1] <- NA
+
+# Prepare for plotting
+dnbri_prep <- as.factor(dnbri_clas)
+levels(dnbri_prep)[[1]]$label <- c('Enhanced Regrowth, High',
+                                   'Enhanced Regrowth, Low',
+                                   'Unburned',
+                                   'Low Severity',
+                                   'Moderate-low Severity',
+                                   'Moderate-high Severity',
+                                   'High Severity')
+pal_dnbri <- cpt(pal = "mpl_inferno",
+                 n = 7)
+```
+
+Now, when we have the dNBRI, we can isolate the pixels containing *burned values* to calculate the burned area. The class *low severity* was excluded from the analysis since that class included mostly area from the northern area were fire did not reach.  
+
+```{r}
+# Select only burned pixels
+dnbri_fire <- dnbri_prep
+dnbri_fire[dnbri_fire<5] <- NA
+
+# Convert to polygons, and merge adjacent polygons
+dnbri_fire_vect <- as.polygons(dnbri_fire) |> 
+  st_as_sf() |>
+  st_set_crs(st_crs('EPSG:25829')) |> 
+  st_cast('POLYGON') |> 
+  st_union(by_feature = TRUE) 
+```
+
+The object *dnbri_fire_vect* contains polygon features that are classified by severity and have an area attribute. The results section will display the final outcome, along with the crucial final data cleaning step. It is essential to review the RGB results first to understand the final steps involved.  
+
+<br>
+
+## Results  
+
+### Wildfires landscape impact    
+
+To illustrate the difference before the wildfires blast and after, images from August 2021 are compared against August 2022 (use the tabset under the code to see the images). It it very noticeable the change from [Fig. @fig-rgb1] to [Fig. @fig-rgb2] in the whole occidental part. The administration of Galicia (Xunta de Galicia) recognized more than 11,000 ha burned in Folgoso do Courel and Pobra do Brollón (colintant on the west) together.   
+
+Furthermore, the [Fig. @fig-falsecolor1] and [Fig. @fig-falsecolor2] are the false color images using the bands *SWIR*, *NIR* and *RED*. In these images vegetation is showed as green to pink colour schemes, whereas the burned vegetation has turned to dark blue.  
+
+```{r}
+#| fig-cap: True color images of August 2021 vs August 2022.
+#| eval: false
+#| code-fold: true
+plotRGB(sen2021$August_2021, 3, 2, 1, stretch = 'lin', main = 'August 2021')
+plotRGB(sen2022$August_2022, 3, 2, 1, stretch = 'lin', main = 'August 2022')
+plotRGB(sen2021$August_2021, 4, 2, 1, stretch = 'hist', main = 'False colour August 2021')
+plotRGB(sen2022$August_2022, 4, 2, 1, stretch = 'hist', main = 'False colour August 2022')
+```
+
+::: {.panel-tabset}
+
+## RGB August 2021
+
+```{r}
+#| fig-cap: True colour image of Folgoso do Courel in August 2021.
+#| label: fig-rgb1
+#| echo: false
+plotRGB(sen2021$August_2021, 3,2,1, stretch = 'lin', main = 'RGB August 2021')
+```
+
+## RGB August 2022
+
+```{r}
+#| fig-cap: True colour image of Folgoso do Courel in August 2022.
+#| label: fig-rgb2
+#| echo: false
+plotRGB(sen2022$August_2022, 3, 2, 1, stretch = 'lin', main = 'RGB August 2022')
+```
+
+## False colour August 2021
+
+```{r}
+#| fig-cap: False colour image of Folgoso do Courel in August 2021.
+#| label: fig-falsecolor1
+#| echo: false
+plotRGB(sen2021$August_2021, 5, 4, 3, stretch = 'lin', main = 'False colour August 2021')
+```
+
+## False colour August 2022
+
+```{r}
+#| fig-cap: False colour image of Folgoso do Courel in August 2022.
+#| label: fig-falsecolor2
+#| echo: false
+plotRGB(sen2022$August_2022, 5, 4, 3, stretch = 'hist', main = 'False colour August 2022')
+```
+
+:::
+
+
+<br>
+
+### EVI dynamics {#sec-evi}  
+
+The distribution of the EVI over time is shown in [Fig. @fig-evihist]. The distribution of the EVI before the wildfires does not seem to be significant different across years. The distributions from February to June have approximately the same shape with slight changes. In June, we can see that in both years the bimodality of the distribution increases, and after the wildfires, from July 2022 to November 2022, the bimodality persists indicating a very obvious change in the vegetation health.  
+
+```{r}
+#| label: fig-evihist
+#| code-fold: true
+#| fig-cap: Comparison of EVI distribution in 2021 and 2022. The dashed lines represent the median of the EVI for the corresponding disitribution plot
+#| fig-height: 10
+#| fig-width: 20
+
+medi_line <- dataevi |> 
+  group_by(Month, Year) |> 
+  summarise(median = median(value))
+
+ggplot(dataevi, aes(x = value, color = Year)) +
+  geom_density(lwd = 1.5, alpha = 0.5) +
+  facet_wrap(~Month, nrow = 2) +
+  geom_vline(data = medi_line, aes(xintercept = median, color = Year), linetype = "twodash", size = 1.5) +
+  labs(x = 'EVI value',
+       y = '',
+       color = '') +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16)) +
+  scale_color_brewer(palette = 'Dark2') +
+  xlim(-0.1,1)
+```
+
+<br>
+
+However, when we look to the results of the Wicolxon signed rank test, we see that the value of EVI for May and June 2022 is significantly different than the same months in 2021 ($p < 0.001$). Therefore, the vegetation in Folgoso do Courel was generally *healthier* in June 2022 than in June 2021.  
+
+```{r}
+#| code-fold: true
+wilcox.test(
+  x = may2022,
+  y = may2021,
+  paired = T,
+  alternative = 'two.sided'
+)
+```
+
+```{r}
+#| code-fold: true
+wilcox.test(
+  x = june2022,
+  y = june2021,
+  paired = T,
+  alternative = 'two.sided'
+)
+```
+
+To determine if the changes in EVI are distributed equally in the area of interest, a graphical representation is displayed for all the months of the time series in the following tabset.  
+
+::: {.panel-tabset}
+
+## EVI 2021  
+
+```{r}
+#| fig-cap: EVI series for 2021
+#| code-fold: true
+#| fig-height: 15
+#| fig-width: 25
+#| label: fig-evi1
+palevi <- colorRampPalette(c('red','orange',"#FFFFCC", "#C2E699", "#78C679", "#31A354",
+                                      '#006837'))
+ggplot() +
+  geom_spatraster(data = evi2021) +
+  scale_fill_gradientn(colours = palevi(100),
+                       na.value = NA,
+                       limits = c(-0.1, 1)) +
+  facet_wrap(~lyr, nrow = 2) +
+  theme_minimal() +
+  labs(fill = '') +
+  theme(legend.position = 'bottom',
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.key.width = unit(3, 'cm'))
+```
+
+## EVI 2022
+
+```{r}
+#| fig-cap: EVI series for 2022
+#| code-fold: true
+#| fig-height: 15
+#| fig-width: 25
+#| label: fig-evi2
+ggplot() +
+  geom_spatraster(data = evi2022) +
+  scale_fill_gradientn(colours = palevi(100),
+                       na.value = NA,
+                       limits = c(-0.1, 1)) +
+  facet_wrap(~lyr, nrow = 2) +
+  theme_minimal() +
+  labs(fill = '') +
+  theme(legend.position = 'bottom',
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.key.width = unit(3, 'cm'))
+```
+
+:::
+
+From the graphical representation, valuable information can be gleaned from the months preceding the fire. It is evident that there is a dormant period and the end of the annual plant cycle during late autumn and winter. EVI values start increasing again during the spring as the plants come out of dormancy. However, upon closer inspection, it becomes apparent that the area that did not burn (the northern area) has generally healthier vegetation with higher EVI values (dark green areas in June). In this regard, we can observe that the area that burned during the subsequent months had lower EVI values than the area that did not burn, particularly in June.  
+
+### NDWI dynamics {#sec-ndwi}   
+
+The distribution of the NDWI over time is shown in [Fig. @fig-ndwihist]. Similar dymanics to EVI are also captured with NDWI. The strength of bimodality starts in June, and has a leap after the fires in July as it was expected.  
+
+
+```{r}
+#| label: fig-ndwihist
+#| code-fold: true
+#| fig-cap: Comparison of NDWI distribution in 2021 and 2022. The dashed lines represent the median of the NDWI for the corresponding disitribution plot
+#| fig-height: 10
+#| fig-width: 20
+
+medi_ndwi <- datandwi |> 
+  group_by(Month, Year) |> 
+  summarise(median = median(value))
+
+ggplot(datandwi, aes(x = value, color = Year)) +
+  geom_density(lwd = 1.5, alpha = 0.5) +
+  facet_wrap(~Month, nrow = 2) +
+  geom_vline(data = medi_ndwi, aes(xintercept = median, color = Year), linetype = "twodash", size = 1.5) +
+  labs(x = 'NDWI value',
+       y = '',
+       color = '') +
+  theme_minimal() +
+  theme(legend.position = 'bottom',
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16)) +
+  scale_color_brewer(palette = 'Dark2') +
+  xlim(-1,1)
+```
+
+<br>
+
+In the tabset, [Fig. @fig-ndwi1] and [Fig. @fig-ndwi2] show the evolution of the NDWI index. Not many information can be taken from this analysis to explain the wildfires. In June 2022 we can see the similar pattern as in EVI, where the northern area displays higher values of the index, and the southern part typically lower values.
+
+::: {.panel-tabset}
+
+## NDWI 2021  
+
+```{r}
+#| fig-cap: NDWI series for 2021
+#| code-fold: true
+#| fig-height: 15
+#| fig-width: 25
+#| label: fig-ndwi1
+palevi <- cpt(pal = 'jjg_misc_temperature', rev = T)
+ggplot() +
+  geom_spatraster(data = ndwi2021) +
+  scale_fill_gradientn(colours = palevi,
+                       na.value = NA,
+                       limits = c(-1, 1)) +
+  facet_wrap(~lyr, nrow = 2) +
+  theme_minimal() +
+  labs(fill = '') +
+  theme(legend.position = 'bottom',
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.key.width = unit(3, 'cm'))
+```
+
+## NDWI 2022
+
+```{r}
+#| fig-cap: NDWI series for 2022
+#| code-fold: true
+#| fig-height: 15
+#| fig-width: 25
+#| label: fig-ndwi2
+ggplot() +
+  geom_spatraster(data = ndwi2022) +
+  scale_fill_gradientn(colours = palevi,
+                       na.value = NA,
+                       limits = c(-1, 1)) +
+  facet_wrap(~lyr, nrow = 2) +
+  theme_minimal() +
+  labs(fill = '') +
+  theme(legend.position = 'bottom',
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        legend.key.width = unit(3, 'cm'))
+```
+
+:::
+
+<br>
+
+### Severity of wildfires in Folgoso do Courel {#sec-dnbri}  
+
+The result of the dNBRI between May 2022 and August 2022 is shown in [Fig. @fig-dnbri]. The wildfires happened in the south and southwestern area of Folgoso do Courel burning a huge area of the municipality. Paying attention to the severity level, an important area was classified as *high severity* following the @firemon classification. However, if we look deep into the details, it is noticeable that in the northern area can be found areas classified as *low* and *moderate severity* which in [Fig. @fig-rgb2] are not burned. To have a more accurate prediction of the burned area, the areas classified as burned which are further north than the clearly *high severity* limit of [Fig. @fig-dnbri] were eliminated.  
+
+```{r}
+#| fig-cap: Difference Normalized Burn Ratio in Folgoso do Courel, Galicia, Spain. The index is computed for the difference between June and August 2022.
+#| label: fig-dnbri
+#| code-fold: true
+#| fig-height: 15
+#| fig-width: 20
+ggplot(dnbri_prep) +
+  geom_spatraster(data = dnbri_prep) +
+  geom_sf(data = st_as_sf(spain), fill = NA, col = 'grey50', lwd = 0.4) +
+  scale_fill_manual(values = pal_dnbri, 
+                    na.value = NA,
+                    na.translate = F) +
+  labs(fill = '',
+       title = 'dNBRI in Folgoso do Courel after wildfires of 2022') +
+  coord_sf(xlim = ext(dnbri_prep)[1:2], ylim = ext(dnbri_prep)[3:4]) + 
+  annotation_scale(location = "br", 
+                   width_hint = 0.5,
+                   text_cex = 1.5,
+                   pad_y = unit(1, 'cm')) +
+  annotation_north_arrow(location = "tr", which_north = "true",
+                         pad_x = unit(0.1, "in"),
+                         pad_y = unit(0.2, "in"),
+                         height = unit(3, 'cm'),
+                         width = unit(3, 'cm'),
+                         style = north_arrow_fancy_orienteering) +
+  ggthemes::theme_pander() +
+  theme(plot.title = element_text(size = 28, hjust = 0.5, face = 'bold'),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 20),
+        legend.key.height = unit(0.6, 'line')) 
+```
+
+<br>  
+
+To eliminate the redundant area, a polygon was drawn using the `terra::draw('polygon')` function, which was subsequently used as mask for cutting the initial area ([Fig. @fig-extent]).
+
+```{r}
+#| echo: false
+extFire <- read_sf(here('inputs/limitsFire/limitsFire.shp'))
+```
+
+```{r}
+#| eval: false
+#| code-fold: true
+plot(dnbri_fire_vect)
+extFire <- draw('polygon')
+plot(extFire, add = T)
+```
+
+```{r}
+#| echo: false
+#| fig-cap: Clipping extent for the wildfire extension
+#| label: fig-extent
+plot(dnbri_fire_vect$geometry)
+plot(extFire$geometry, 
+     pch = 'red', 
+     add = T)
+```
+
+<br>
+
+The next step was to clip the polygons within the *extFire* object, and finally calculate the burned area. The results of the burned area area can be explored in [Fig. @fig-barplot].  
+
+```{r}
+finalWildfireArea <- dnbri_fire_vect |> 
+  st_intersection(extFire) %>%
+  mutate(area = as.numeric(st_area(.)/10000))
+```
+
+```{r}
+#| code-fold: true
+#| fig-cap: Sum of the burned area during the wildfires of summer 2022 in Folgoso do Courel (Galicia, Spain) for three severity levels
+#| label: fig-barplot
+finalWildfireArea |> 
+  group_by(label) |> 
+  summarise(Area = sum(area)) |> 
+  mutate(Severity = factor(label,
+                           levels = c('Moderate-low Severity',
+                                      'Moderate-high Severity',
+                                      'High Severity'))) |> 
+  ggplot() +
+  geom_col(aes(x = Severity, y = Area, fill = Severity, width = 0.5),
+           show.legend = F) +
+  geom_text(aes(x = Severity, y = Area, label = paste(Area, 'ha')),
+            position = position_nudge(y = 100),
+            size = 4) +
+  theme_minimal() +
+  theme_minimal() +
+  labs(y = 'Area (ha)',
+       x = '')
+```
+
+<br>  
+
+A total of `r sum(finalWildfireArea$area)` hectares burned during the wildfires of 2022 in Folgoso do Courel, of which `r round(409430/sum(finalWildfireArea$area), 2)`% (4,094.3 ha) presented high severity levels, whereas only the `r round(72074/sum(finalWildfireArea$area),2)`% of the burned area (720.74 ha) had low to moderate levels of severity. This highlights the catastrophic nature of the wildfires that occurred during the summer of 2022.  
+
+The final vector layer is showed in the next web map ([@fig-sevfinal])
+
+```{r}
+#| fig-cap: Final result of the burned area. You can interact with the map, and explore the type of vegetation that was burned with the Esri.WorldImagery canvas.
+#| label: fig-sevfinal
+#| code-fold: true
+#| fig-width: 20
+#| fig-height: 15
+mapview(finalWildfireArea,
+        zcol = 'label',
+        layer.name = 'Severity',
+        popup = popupTable(finalWildfireArea,
+                             zcol = c('label', 'area')))
+```
+
+<br>  
+
+After a exploration it is noticeable that the higher severities occurred typically in areas with higher density of vegetation and usually tree cover, whereas the lowest severities correspond to non-forested or low-vegetated areas.  
+
+<br>  
+
+## Discussion {#sec-discussion}  
+
+The vegetation indexes have been used for monitoring the vegetation for some decades. The EVI approach used in this work to monitor the health status in Folgoso do Courel has demonstrated to be a good index to detect areas where the vegetation was prone to burn. The health status of the vegetation did not seem to explain why the wildfires happened in 2022 and not in 2021 since the vegetation status was significantly healthier in June 2021 than in June 2022. However, it was clear that the wildfires occurred mostly in the areas where the vegetation had typically lower local values of the EVI in the previous months, and the previous year ([Fig. @fig-evi1] and [Fig. @fig-evi2]). Areas with healthier vegetation (greener) seemed to be more resistant to the fire, creating a very discontinuous perimeter of the fire. It is also patent that the northern area which has during all the time series higher EVI values than the southern area did not burn. The motives can be plenty, and more information about the lightnings and ignitions would be necessary to assess the initial trajectories and evolution of the wildfires. In a similar fashion, the NDWI showed also that the southern area had typically lower canopy cover and water stress than the northern area.  
+
+These results show that vegetation status in the southern area of Folgoso do Courel was usually unhealthier vegetation (less EVI), with less canopy cover or more stressed (less NDWI). This analysis although it is helpful, it is rather naive for several reasons:  
+
+* The analysis would be more complete and accurate if the area was stratified by vegetation classes. Specially for the NDWI, where the same values can represent either low canopy cover without water stress, or water stress in high canopy cover. 
+
+* A thorough study of the vegetation status the day before the wildfires, since the week before the temperatures were extreme for the area.   
+
+* A better understanding of the phenology of the present vegetation is needed. The tree species present there are coniferous like *Pinus radiata* or *Pinus sylvestris*, marcescent species such as *Quercus pyrenaica*, deciduous like *Castanea sativa*, or different species of the family *Ericaceae*. As the vegetation is heterogeneous in species and density, the values of the indices can serve only as an approximation.  
+
+* One reason supporting the difference between the northern and southern area could be explained by the height gradient ([Fig. @fig-dem]) and all the causal effects.   
+
+On the other hand, the severity of the wildires is the most accurate result of this study. The majority of the burned area (4,094 ha; 65%) presented high severity level. Other significant portion of the burned area (1,478 ha; 24%) was classified as moderate to high severity. The severity of the burn is closely related to the amount of organic matter that has been consumed, which in turn can contribute to soil loss and increase the susceptibility to erosion.  
+
+After the wildfires were extinguished, the administration of Galicia devoted effort to protect sensitive areas spreading straw and building wood walls to protect the soil from water erosion.
+
+<br>
+
+## Session info
+
+```{r}
+#| echo: false
+report(sessionInfo())
+```
+
+<br>
+
+## References  
